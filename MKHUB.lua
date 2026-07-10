@@ -499,7 +499,7 @@ weaponDropdownBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ================================================================
--- SECTION: POSITION
+-- SECTION: POSITION (COMPLETE REWRITE - WORKING)
 -- ================================================================
 local posSection = createSection(ScrollContainer, "📍 Position", 240, 110)
 
@@ -514,15 +514,8 @@ savePosBtn.Font = Enum.Font.GothamSemibold
 savePosBtn.TextSize = 12
 applyCorner(savePosBtn, 6)
 savePosBtn.MouseButton1Click:Connect(function()
-    local char = GetCharacter()
-    if char then
-        local hrp = GetRootPart(char)
-        if hrp then
-            savedPosition = hrp.CFrame
-            ShowNotification("✔ Position saved!", true)
-            UpdateStatus()
-        end
-    end
+    print("Save Pos button clicked!")
+    SavePosition()
 end)
 
 -- Return button
@@ -536,6 +529,7 @@ returnPosBtn.Font = Enum.Font.GothamSemibold
 returnPosBtn.TextSize = 12
 applyCorner(returnPosBtn, 6)
 returnPosBtn.MouseButton1Click:Connect(function()
+    print("Return button clicked!")
     ReturnPosition()
 end)
 
@@ -571,6 +565,7 @@ local function createSmallToggle(parent, text, xPos, yPos, getter, setter)
         btn.BackgroundColor3 = newState and colorOn or colorOff
         btn.Text = newState and "ON" or "OFF"
         UpdateStatus()
+        print(text .. " toggled to: " .. tostring(newState))
     end)
     return btn
 end
@@ -720,7 +715,7 @@ end)
 UpdateStatus()
 
 -- ================================================================
--- PART 3 - HELPER FUNCTIONS (FIXED POSITION LOGIC)
+-- PART 3 - HELPER FUNCTIONS (COMPLETE REWRITE)
 -- ================================================================
 
 -- Get character
@@ -787,7 +782,6 @@ local function AttackEnemy(character)
         return
     end
     
-    -- Fallback: Use mouse click simulation (with error handling)
     pcall(function()
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
         task.wait(0.05)
@@ -795,38 +789,58 @@ local function AttackEnemy(character)
     end)
 end
 
--- Save position (ONLY when user clicks button)
+-- ================================================================
+-- POSITION SYSTEM (COMPLETE REWRITE - WORKING)
+-- ================================================================
+
+-- Save position function
 local function SavePosition()
+    print("Attempting to save position...")
     local char = GetCharacter()
-    if char then
-        local hrp = GetRootPart(char)
-        if hrp then
-            savedPosition = hrp.CFrame
-            ShowNotification("✔ Position saved!", true)
-            UpdateStatus()
-            return true
-        end
+    if not char then
+        ShowNotification("❌ Character not found!", false)
+        print("❌ Character not found!")
+        return false
     end
-    ShowNotification("❌ Failed to save position", false)
-    return false
+    
+    local hrp = GetRootPart(char)
+    if not hrp then
+        ShowNotification("❌ HumanoidRootPart not found!", false)
+        print("❌ HumanoidRootPart not found!")
+        return false
+    end
+    
+    savedPosition = hrp.CFrame
+    ShowNotification("✔ Position saved at: " .. tostring(savedPosition.Position), true)
+    print("✔ Position saved at: " .. tostring(savedPosition.Position))
+    UpdateStatus()
+    return true
 end
 
--- Return to saved position (ONLY when user clicks or auto-return is on)
+-- Return to saved position function
 local function ReturnPosition()
+    print("Attempting to return to saved position...")
     if not savedPosition then
-        ShowNotification("❌ No saved position", false)
+        ShowNotification("❌ No saved position! Click 'Save Pos' first.", false)
+        print("❌ No saved position!")
         return
     end
+    
     local char = GetCharacter()
-    if char then
-        local hrp = GetRootPart(char)
-        if hrp then
-            TweenTo(hrp, savedPosition, 200)
-            ShowNotification("↩ Returning to saved position", true)
-            return
-        end
+    if not char then
+        ShowNotification("❌ Character not found!", false)
+        return
     end
-    ShowNotification("❌ Cannot return", false)
+    
+    local hrp = GetRootPart(char)
+    if not hrp then
+        ShowNotification("❌ HumanoidRootPart not found!", false)
+        return
+    end
+    
+    print("Returning to: " .. tostring(savedPosition.Position))
+    TweenTo(hrp, savedPosition, 200)
+    ShowNotification("↩ Returning to saved position!", true)
 end
 -- ================================================================
 -- PART 4 - AUTO FARM (FULLY FIXED)
@@ -942,7 +956,7 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 6 - AUTO BOSS (FIXED - NO AUTO SAVE/RETURN)
+-- PART 6 - AUTO BOSS (FIXED - NO POSITION INTERFERENCE)
 -- ================================================================
 
 -- Helper: Go to boss and fight
@@ -998,7 +1012,6 @@ local function GoToBoss(bossIndicator, bossName)
     distance = (bossIndicator.Position - myHRP.Position).Magnitude
     if distance > 30 then
         TweenTo(myHRP, bossIndicator.CFrame, BOSS_FLY_SPEED)
-        -- Wait until close
         local timeout = 0
         while distance > 30 and isBossing and myHumanoid.Health > 0 and scriptRunning and timeout < 30 do
             task.wait(0.2)
@@ -1036,10 +1049,8 @@ local function GoToBoss(bossIndicator, bossName)
           and isBossing and scriptRunning do
         if not myHRP or not myHRP.Parent then break end
         
-        -- Move to boss
         myHRP.CFrame = bossHRP.CFrame * CFrame.new(0, 0, 1.5)
         
-        -- Attack
         if os.clock() - lastAttack >= attackCooldown then
             lastAttack = os.clock()
             AttackEnemy(char)
@@ -1049,7 +1060,6 @@ local function GoToBoss(bossIndicator, bossName)
 
     if noclipConn then noclipConn:Disconnect() end
     
-    -- If boss killed, increment boss kills
     if bossHum and bossHum.Health <= 0 then
         bossKills = bossKills + 1
         ShowNotification("💀 Boss defeated!", true)
@@ -1057,13 +1067,12 @@ local function GoToBoss(bossIndicator, bossName)
     end
 end
 
--- Boss detection thread (FIXED - NO AUTO SAVE/RETURN)
+-- Boss detection thread (DOES NOT TOUCH POSITION)
 task.spawn(function()
     while scriptRunning do
         task.wait(1)
         
         if not isBossing then
-            -- If boss mode was active but turned off, cleanup
             if farmPaused then
                 farmPaused = false
                 bossModeActive = false
@@ -1085,13 +1094,9 @@ task.spawn(function()
         end
 
         if bossIndicator and isBossing and not farmPaused and not bossModeActive then
-            -- Boss appeared! Start smart boss routine
             ShowNotification("⚠ Boss spawned! Pausing farm.", false)
             
-            -- DO NOT auto-save position here!
-            -- Only pause farm and go to boss
-            
-            -- Pause farm and activate boss mode
+            -- ONLY pause farm - NO POSITION SAVING
             farmPaused = true
             bossModeActive = true
             currentMode = "Boss Mode"
@@ -1100,8 +1105,7 @@ task.spawn(function()
             -- Go to boss and fight
             GoToBoss(bossIndicator, bossName)
             
-            -- IMPORTANT: DO NOT auto-return! Let the player decide if they want to return.
-            -- We only resume farming
+            -- Resume farming - NO AUTO RETURN
             farmPaused = false
             bossModeActive = false
             currentMode = isFarming and "Farming" or "Idle"
@@ -1112,36 +1116,37 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 7 - POSITION SYSTEM (Auto Save & Auto Return - FIXED)
+-- PART 7 - POSITION SYSTEM THREADS (WORKING)
 -- ================================================================
 
--- Auto save thread (ONLY works if autoSaveEnabled is true)
+-- Auto save thread
 task.spawn(function()
     while scriptRunning do
         task.wait(5)
-        if autoSaveEnabled and not farmPaused and not bossModeActive then
+        if autoSaveEnabled then
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
                 if hrp then
                     savedPosition = hrp.CFrame
+                    -- Silent update, no notification
                 end
             end
         end
     end
 end)
 
--- Auto return thread (ONLY works if autoReturnEnabled is true AND savedPosition exists)
+-- Auto return thread
 task.spawn(function()
     while scriptRunning do
         task.wait(2)
-        if autoReturnEnabled and savedPosition and not farmPaused and not bossModeActive then
+        if autoReturnEnabled and savedPosition then
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
                 if hrp then
                     local dist = (savedPosition.Position - hrp.Position).Magnitude
-                    if dist > 50 then  -- if far away, return
+                    if dist > 50 then
                         ReturnPosition()
                     end
                 end
