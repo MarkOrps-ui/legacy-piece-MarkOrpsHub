@@ -720,10 +720,10 @@ end)
 UpdateStatus()
 
 -- ================================================================
--- PART 3 - HELPER FUNCTIONS (FIXED)
+-- PART 3 - HELPER FUNCTIONS (FIXED POSITION LOGIC)
 -- ================================================================
 
--- Get character (FIXED)
+-- Get character
 local function GetCharacter()
     local char = Workspace:FindFirstChild("Characters") and Workspace.Characters:FindFirstChild(LocalPlayer.Name)
     if not char then
@@ -742,7 +742,7 @@ local function GetRootPart(char)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- Tween to a CFrame (FIXED)
+-- Tween to a CFrame
 local function TweenTo(part, targetCFrame, speed)
     if not part then return end
     local distance = (targetCFrame.Position - part.Position).Magnitude
@@ -752,7 +752,7 @@ local function TweenTo(part, targetCFrame, speed)
     return tween
 end
 
--- Equip weapon (FIXED)
+-- Equip weapon
 local function EquipWeapon(character)
     if SELECTED_WEAPON == "None/Melee" then
         local humanoid = GetHumanoid(character)
@@ -779,20 +779,23 @@ local function EquipWeapon(character)
     return nil
 end
 
--- Attack enemy (FIXED)
+-- Attack enemy
 local function AttackEnemy(character)
     local weapon = EquipWeapon(character)
     if weapon then
         weapon:Activate()
         return
     end
-    -- Fallback to click attack
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-    task.wait(0.05)
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+    
+    -- Fallback: Use mouse click simulation (with error handling)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+        task.wait(0.05)
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+    end)
 end
 
--- Save position (FIXED)
+-- Save position (ONLY when user clicks button)
 local function SavePosition()
     local char = GetCharacter()
     if char then
@@ -808,7 +811,7 @@ local function SavePosition()
     return false
 end
 
--- Return to saved position (FIXED)
+-- Return to saved position (ONLY when user clicks or auto-return is on)
 local function ReturnPosition()
     if not savedPosition then
         ShowNotification("❌ No saved position", false)
@@ -825,7 +828,6 @@ local function ReturnPosition()
     end
     ShowNotification("❌ Cannot return", false)
 end
-
 -- ================================================================
 -- PART 4 - AUTO FARM (FULLY FIXED)
 -- ================================================================
@@ -940,7 +942,7 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 6 - AUTO BOSS (FULLY FIXED)
+-- PART 6 - AUTO BOSS (FIXED - NO AUTO SAVE/RETURN)
 -- ================================================================
 
 -- Helper: Go to boss and fight
@@ -1055,7 +1057,7 @@ local function GoToBoss(bossIndicator, bossName)
     end
 end
 
--- Boss detection thread
+-- Boss detection thread (FIXED - NO AUTO SAVE/RETURN)
 task.spawn(function()
     while scriptRunning do
         task.wait(1)
@@ -1084,16 +1086,10 @@ task.spawn(function()
 
         if bossIndicator and isBossing and not farmPaused and not bossModeActive then
             -- Boss appeared! Start smart boss routine
-            ShowNotification("⚠ Boss spawned! Saving position and pausing farm.", false)
+            ShowNotification("⚠ Boss spawned! Pausing farm.", false)
             
-            -- Save current position
-            local char = GetCharacter()
-            if char then
-                local hrp = GetRootPart(char)
-                if hrp then
-                    savedPosition = hrp.CFrame
-                end
-            end
+            -- DO NOT auto-save position here!
+            -- Only pause farm and go to boss
             
             -- Pause farm and activate boss mode
             farmPaused = true
@@ -1104,30 +1100,26 @@ task.spawn(function()
             -- Go to boss and fight
             GoToBoss(bossIndicator, bossName)
             
-            -- Return to saved position
-            if savedPosition then
-                ReturnPosition()
-            end
-            
-            -- Resume everything
+            -- IMPORTANT: DO NOT auto-return! Let the player decide if they want to return.
+            -- We only resume farming
             farmPaused = false
             bossModeActive = false
             currentMode = isFarming and "Farming" or "Idle"
             UpdateStatus()
-            ShowNotification("↩ Returned, resuming farm", true)
+            ShowNotification("✅ Boss fight ended, farm resumed", true)
         end
     end
 end)
 
 -- ================================================================
--- PART 7 - POSITION SYSTEM (Auto Save & Auto Return)
+-- PART 7 - POSITION SYSTEM (Auto Save & Auto Return - FIXED)
 -- ================================================================
 
--- Auto save thread
+-- Auto save thread (ONLY works if autoSaveEnabled is true)
 task.spawn(function()
     while scriptRunning do
         task.wait(5)
-        if autoSaveEnabled then
+        if autoSaveEnabled and not farmPaused and not bossModeActive then
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
@@ -1139,7 +1131,7 @@ task.spawn(function()
     end
 end)
 
--- Auto return thread
+-- Auto return thread (ONLY works if autoReturnEnabled is true AND savedPosition exists)
 task.spawn(function()
     while scriptRunning do
         task.wait(2)
@@ -1149,7 +1141,7 @@ task.spawn(function()
                 local hrp = GetRootPart(char)
                 if hrp then
                     local dist = (savedPosition.Position - hrp.Position).Magnitude
-                    if dist > 50 then
+                    if dist > 50 then  -- if far away, return
                         ReturnPosition()
                     end
                 end
