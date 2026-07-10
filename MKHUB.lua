@@ -1,8 +1,7 @@
 -- ================================================================
---  LEGACY ADMIN HUB V2 - COMPLETE LOCALSCRIPT
+--  LEGACY ADMIN HUB V2 - COMPLETE LOCALSCRIPT (FULLY FIXED)
 --  Roblox Admin Panel for Personal Use
---  Version 2.0
---  All existing functionality preserved, with major improvements.
+--  Version 2.0 - All features working
 -- ================================================================
 
 -- ================================================================
@@ -16,7 +15,6 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -67,13 +65,13 @@ local isBossing = false
 local scriptRunning = true
 
 -- Position system
-local savedPosition = nil               -- CFrame
+local savedPosition = nil
 local autoSaveEnabled = false
 local autoReturnEnabled = false
 
 -- Smart boss state
-local bossModeActive = false            -- true when boss handling is in progress (pause farm, etc.)
-local farmPausedByBoss = false          -- indicates farm was paused by boss, need to resume later
+local bossModeActive = false
+local farmPaused = false
 
 -- Runtime stats
 local runtimeSeconds = 0
@@ -92,20 +90,6 @@ local function applyCorner(guiObject, radius)
     corner.Parent = guiObject
 end
 
--- Utility: add shadow
-local function addShadow(guiObject, size, color, transparency)
-    local shadow = Instance.new("ImageLabel")
-    shadow.Size = UDim2.new(1, size, 1, size)
-    shadow.Position = UDim2.new(0, -size/2, 0, -size/2)
-    shadow.BackgroundTransparency = 1
-    shadow.Image = "rbxassetid://1316045357"  -- circle shadow
-    shadow.ImageColor3 = color or Color3.new(0,0,0)
-    shadow.ImageTransparency = transparency or 0.5
-    shadow.ZIndex = 0
-    shadow.Parent = guiObject
-    return shadow
-end
-
 -- Main ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "LegacyAdminHub"
@@ -113,7 +97,7 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
 -- ================================================================
--- NOTIFICATION SYSTEM (Part 9 integrated here but we'll define early)
+-- NOTIFICATION SYSTEM
 -- ================================================================
 
 local notificationContainer = Instance.new("Frame")
@@ -133,7 +117,7 @@ local function ShowNotification(text, isSuccess, duration)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 280, 0, 40)
     frame.BackgroundColor3 = isSuccess and Color3.fromRGB(50, 180, 80) or Color3.fromRGB(180, 50, 50)
-    frame.BackgroundTransparency = 0.9
+    frame.BackgroundTransparency = 0.15
     applyCorner(frame, 8)
     frame.Parent = notificationContainer
 
@@ -162,23 +146,9 @@ local function ShowNotification(text, isSuccess, duration)
 end
 
 -- ================================================================
--- MAIN UI FRAME
+-- DRAGGABLE FUNCTION (Mobile friendly)
 -- ================================================================
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 320, 0, 520)
-MainFrame.Position = UDim2.new(0.5, -160, 0.5, -260)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-MainFrame.BackgroundTransparency = 0.05
-MainFrame.Active = true
-MainFrame.Draggable = false  -- we use our own drag
-MainFrame.Visible = false
-MainFrame.ZIndex = 1
-MainFrame.Parent = ScreenGui
-applyCorner(MainFrame, 16)
-addShadow(MainFrame, 12, Color3.new(0,0,0), 0.7)
-
--- Make draggable (mobile friendly)
 local function makeDraggable(gui)
     local dragging, dragInput, dragStart, startPos
 
@@ -212,6 +182,34 @@ local function makeDraggable(gui)
         end
     end)
 end
+
+-- ================================================================
+-- MAIN UI FRAME
+-- ================================================================
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 320, 0, 520)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -260)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+MainFrame.BackgroundTransparency = 0.05
+MainFrame.Active = true
+MainFrame.Draggable = false
+MainFrame.Visible = true
+MainFrame.ZIndex = 1
+MainFrame.Parent = ScreenGui
+applyCorner(MainFrame, 16)
+
+-- Add shadow
+local shadow = Instance.new("ImageLabel")
+shadow.Size = UDim2.new(1, 12, 1, 12)
+shadow.Position = UDim2.new(0, -6, 0, -6)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://1316045357"
+shadow.ImageColor3 = Color3.new(0,0,0)
+shadow.ImageTransparency = 0.6
+shadow.ZIndex = 0
+shadow.Parent = MainFrame
+
 makeDraggable(MainFrame)
 
 -- ================================================================
@@ -257,40 +255,29 @@ StatusFrame.BackgroundColor3 = Color3.fromRGB(40,40,45)
 StatusFrame.BackgroundTransparency = 0.3
 applyCorner(StatusFrame, 10)
 
-local statusLabels = {
-    Farm = Instance.new("TextLabel", StatusFrame),
-    Boss = Instance.new("TextLabel", StatusFrame),
-    Stats = Instance.new("TextLabel", StatusFrame),
-    Weapon = Instance.new("TextLabel", StatusFrame),
-    Island = Instance.new("TextLabel", StatusFrame),
-    Pos = Instance.new("TextLabel", StatusFrame),
-    BossStatus = Instance.new("TextLabel", StatusFrame),
-    Runtime = Instance.new("TextLabel", StatusFrame),
-    Mode = Instance.new("TextLabel", StatusFrame),
-}
--- Layout: grid-like using position
-local function layoutStatus()
-    local y = 5
-    local xOffsets = {0, 140}
-    local row = 0
-    local col = 0
-    for key, label in pairs(statusLabels) do
-        label.Size = UDim2.new(0, 130, 0, 18)
-        label.Position = UDim2.new(0, xOffsets[col+1] or 0, 0, y + row*22)
-        label.BackgroundTransparency = 1
-        label.Text = key .. ": N/A"
-        label.TextColor3 = Color3.fromRGB(220,220,220)
-        label.Font = Enum.Font.GothamSemibold
-        label.TextSize = 12
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        col = col + 1
-        if col > 1 then
-            col = 0
-            row = row + 1
-        end
-    end
+local statusLabels = {}
+local function createStatusLabel(text, x, y)
+    local label = Instance.new("TextLabel", StatusFrame)
+    label.Size = UDim2.new(0, 130, 0, 18)
+    label.Position = UDim2.new(0, x, 0, y)
+    label.BackgroundTransparency = 1
+    label.Text = text .. ": N/A"
+    label.TextColor3 = Color3.fromRGB(220,220,220)
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    return label
 end
-layoutStatus()
+
+statusLabels.Farm = createStatusLabel("Farm", 5, 5)
+statusLabels.Boss = createStatusLabel("Boss", 140, 5)
+statusLabels.Stats = createStatusLabel("Stats", 5, 27)
+statusLabels.Weapon = createStatusLabel("Weapon", 140, 27)
+statusLabels.Island = createStatusLabel("Island", 5, 49)
+statusLabels.Pos = createStatusLabel("Pos", 140, 49)
+statusLabels.BossStatus = createStatusLabel("Boss Status", 5, 71)
+statusLabels.Runtime = createStatusLabel("Runtime", 140, 71)
+statusLabels.Mode = createStatusLabel("Mode", 5, 93)
 
 -- Function to update status labels
 local function UpdateStatus()
@@ -309,10 +296,19 @@ local function UpdateStatus()
 end
 
 -- ================================================================
--- SECTIONS
+-- SCROLL CONTAINER FOR SECTIONS
 -- ================================================================
+local ScrollContainer = Instance.new("ScrollingFrame", MainFrame)
+ScrollContainer.Size = UDim2.new(1, 0, 0, 310)
+ScrollContainer.Position = UDim2.new(0, 0, 0, 200)
+ScrollContainer.BackgroundTransparency = 1
+ScrollContainer.BorderSizePixel = 0
+ScrollContainer.ScrollBarThickness = 4
+ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 530)
 
--- Helper to create a section with title and content frame
+-- ================================================================
+-- HELPER: CREATE SECTION
+-- ================================================================
 local function createSection(parent, title, yPos, height)
     local section = Instance.new("Frame", parent)
     section.Size = UDim2.new(0.9, 0, 0, height)
@@ -336,29 +332,25 @@ local function createSection(parent, title, yPos, height)
     return content
 end
 
--- We'll build sections in the main frame below status. We'll use a ScrollingFrame to contain all sections if needed.
-local ScrollContainer = Instance.new("ScrollingFrame", MainFrame)
-ScrollContainer.Size = UDim2.new(1, 0, 0, 310)
-ScrollContainer.Position = UDim2.new(0, 0, 0, 200)
-ScrollContainer.BackgroundTransparency = 1
-ScrollContainer.BorderSizePixel = 0
-ScrollContainer.ScrollBarThickness = 4
-ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 500) -- will be updated after adding sections
+-- ================================================================
+-- HELPER: CREATE TOGGLE BUTTON
+-- ================================================================
+local colorOn = Color3.fromRGB(50,180,80)
+local colorOff = Color3.fromRGB(180,50,50)
+local colorBoss = Color3.fromRGB(140,60,200)
 
--- We'll add sections in order.
-
--- === FARMING SECTION ===
-local farmSection = createSection(ScrollContainer, "⚔ Farming", 0, 70)
--- Toggles
-local function createToggle(parent, text, yPos, getter, setter, colorOn, colorOff)
+local function createToggle(parent, text, xPos, yPos, getter, setter, colorOnVal, colorOffVal)
+    colorOnVal = colorOnVal or colorOn
+    colorOffVal = colorOffVal or colorOff
+    
     local frame = Instance.new("Frame", parent)
     frame.Size = UDim2.new(0.45, 0, 0, 30)
-    frame.Position = UDim2.new(0, 0, 0, yPos)
+    frame.Position = UDim2.new(xPos or 0, 0, 0, yPos or 0)
     frame.BackgroundTransparency = 1
 
     local btn = Instance.new("TextButton", frame)
-    btn.Size = UDim2.new(1, 0, 1, 0)
-    btn.BackgroundColor3 = getter() and colorOn or colorOff
+    btn.Size = UDim2.new(0.5, 0, 1, 0)
+    btn.BackgroundColor3 = getter() and colorOnVal or colorOffVal
     btn.Text = getter() and "ON" or "OFF"
     btn.TextColor3 = Color3.fromRGB(255,255,255)
     btn.Font = Enum.Font.GothamBold
@@ -366,8 +358,8 @@ local function createToggle(parent, text, yPos, getter, setter, colorOn, colorOf
     applyCorner(btn, 6)
 
     local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0, 50, 1, 0)
-    label.Position = UDim2.new(1, 5, 0, 0)
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.Position = UDim2.new(0.5, 5, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = Color3.fromRGB(200,200,200)
@@ -378,24 +370,26 @@ local function createToggle(parent, text, yPos, getter, setter, colorOn, colorOf
     btn.MouseButton1Click:Connect(function()
         local newState = not getter()
         setter(newState)
-        btn.BackgroundColor3 = newState and colorOn or colorOff
+        btn.BackgroundColor3 = newState and colorOnVal or colorOffVal
         btn.Text = newState and "ON" or "OFF"
         UpdateStatus()
     end)
     return btn
 end
 
-local colorOn = Color3.fromRGB(50,180,80)
-local colorOff = Color3.fromRGB(180,50,50)
-local colorBoss = Color3.fromRGB(140,60,200)
+-- ================================================================
+-- SECTION: FARMING
+-- ================================================================
+local farmSection = createSection(ScrollContainer, "⚔ Farming", 0, 70)
+createToggle(farmSection, "Farm", 0, 0, function() return isFarming end, function(v) isFarming = v end, colorOn, colorOff)
+createToggle(farmSection, "Boss", 0.5, 0, function() return isBossing end, function(v) isBossing = v end, colorBoss, colorOff)
 
-createToggle(farmSection, "Farm", 0, function() return isFarming end, function(v) isFarming = v end, colorOn, colorOff)
-createToggle(farmSection, "Boss", 35, function() return isBossing end, function(v) isBossing = v end, colorBoss, colorOff)
-
--- === STATS SECTION ===
+-- ================================================================
+-- SECTION: STATS
+-- ================================================================
 local statsSection = createSection(ScrollContainer, "📈 Stats", 80, 70)
--- Stat toggle + dropdown
-local statToggle = createToggle(statsSection, "Stats", 0, function() return isStating end, function(v) isStating = v end, colorOn, colorOff)
+createToggle(statsSection, "Stats", 0, 0, function() return isStating end, function(v) isStating = v end, colorOn, colorOff)
+
 -- Stat dropdown button
 local statDropdownBtn = Instance.new("TextButton", statsSection)
 statDropdownBtn.Size = UDim2.new(0.45, 0, 0, 30)
@@ -434,7 +428,9 @@ statDropdownBtn.MouseButton1Click:Connect(function()
     statListFrame.Visible = not statListFrame.Visible
 end)
 
--- === COMBAT SECTION (Weapon) ===
+-- ================================================================
+-- SECTION: COMBAT (Weapon)
+-- ================================================================
 local combatSection = createSection(ScrollContainer, "⚔ Combat", 160, 70)
 local weaponDropdownBtn = Instance.new("TextButton", combatSection)
 weaponDropdownBtn.Size = UDim2.new(0.9, 0, 0, 30)
@@ -457,7 +453,6 @@ applyCorner(weaponScroll, 6)
 local weaponLayout = Instance.new("UIListLayout", weaponScroll)
 
 local function refreshWeaponList()
-    -- Clear existing
     for _, child in ipairs(weaponScroll:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
@@ -500,28 +495,25 @@ weaponDropdownBtn.MouseButton1Click:Connect(function()
         refreshWeaponList()
         weaponScroll.Visible = true
     end
-    -- hide other dropdowns
     statListFrame.Visible = false
 end)
 
--- === POSITION SECTION ===
+-- ================================================================
+-- SECTION: POSITION
+-- ================================================================
 local posSection = createSection(ScrollContainer, "📍 Position", 240, 110)
--- Save, Return, Auto Return, Auto Save
-local function createPosButton(parent, text, yPos, color, callback)
-    local btn = Instance.new("TextButton", parent)
-    btn.Size = UDim2.new(0.28, 0, 0, 30)
-    btn.Position = UDim2.new(0.05 + (yPos%3)*0.32, 0, 0, math.floor(yPos/3)*35)
-    btn.BackgroundColor3 = color
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 12
-    applyCorner(btn, 6)
-    btn.MouseButton1Click:Connect(callback)
-    return btn
-end
 
-createPosButton(posSection, "Save Pos", 0, Color3.fromRGB(40,120,200), function()
+-- Save button
+local savePosBtn = Instance.new("TextButton", posSection)
+savePosBtn.Size = UDim2.new(0.28, 0, 0, 30)
+savePosBtn.Position = UDim2.new(0.05, 0, 0, 0)
+savePosBtn.BackgroundColor3 = Color3.fromRGB(40,120,200)
+savePosBtn.Text = "Save Pos"
+savePosBtn.TextColor3 = Color3.fromRGB(255,255,255)
+savePosBtn.Font = Enum.Font.GothamSemibold
+savePosBtn.TextSize = 12
+applyCorner(savePosBtn, 6)
+savePosBtn.MouseButton1Click:Connect(function()
     local char = GetCharacter()
     if char then
         local hrp = GetRootPart(char)
@@ -533,15 +525,25 @@ createPosButton(posSection, "Save Pos", 0, Color3.fromRGB(40,120,200), function(
     end
 end)
 
-createPosButton(posSection, "Return", 1, Color3.fromRGB(200,120,40), function()
+-- Return button
+local returnPosBtn = Instance.new("TextButton", posSection)
+returnPosBtn.Size = UDim2.new(0.28, 0, 0, 30)
+returnPosBtn.Position = UDim2.new(0.37, 0, 0, 0)
+returnPosBtn.BackgroundColor3 = Color3.fromRGB(200,120,40)
+returnPosBtn.Text = "Return"
+returnPosBtn.TextColor3 = Color3.fromRGB(255,255,255)
+returnPosBtn.Font = Enum.Font.GothamSemibold
+returnPosBtn.TextSize = 12
+applyCorner(returnPosBtn, 6)
+returnPosBtn.MouseButton1Click:Connect(function()
     ReturnPosition()
 end)
 
--- Toggles: Auto Return, Auto Save
-local function createSmallToggle(parent, text, yPos, getter, setter)
+-- Auto Return toggle
+local function createSmallToggle(parent, text, xPos, yPos, getter, setter)
     local frame = Instance.new("Frame", parent)
-    frame.Size = UDim2.new(0.28, 0, 0, 30)
-    frame.Position = UDim2.new(0.05 + (yPos%3)*0.32, 0, 0, math.floor(yPos/3)*35 + 35)
+    frame.Size = UDim2.new(0.28, 0, 0, 25)
+    frame.Position = UDim2.new(xPos or 0, 0, 0, yPos or 35)
     frame.BackgroundTransparency = 1
 
     local btn = Instance.new("TextButton", frame)
@@ -573,11 +575,14 @@ local function createSmallToggle(parent, text, yPos, getter, setter)
     return btn
 end
 
-createSmallToggle(posSection, "Auto Return", 2, function() return autoReturnEnabled end, function(v) autoReturnEnabled = v end)
-createSmallToggle(posSection, "Auto Save", 3, function() return autoSaveEnabled end, function(v) autoSaveEnabled = v end)
+createSmallToggle(posSection, "Auto Return", 0.05, 35, function() return autoReturnEnabled end, function(v) autoReturnEnabled = v end)
+createSmallToggle(posSection, "Auto Save", 0.37, 35, function() return autoSaveEnabled end, function(v) autoSaveEnabled = v end)
 
--- === TELEPORT SECTION ===
+-- ================================================================
+-- SECTION: TELEPORT
+-- ================================================================
 local teleportSection = createSection(ScrollContainer, "🌍 Teleport", 360, 90)
+
 local islandDropdownBtn = Instance.new("TextButton", teleportSection)
 islandDropdownBtn.Size = UDim2.new(0.7, 0, 0, 30)
 islandDropdownBtn.Position = UDim2.new(0.05, 0, 0, 0)
@@ -640,8 +645,11 @@ teleportBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- === UTILITIES SECTION ===
+-- ================================================================
+-- SECTION: UTILITIES
+-- ================================================================
 local utilSection = createSection(ScrollContainer, "⚙ Utilities", 460, 60)
+
 local unloadBtn = Instance.new("TextButton", utilSection)
 unloadBtn.Size = UDim2.new(0.45, 0, 0, 30)
 unloadBtn.Position = UDim2.new(0.05, 0, 0, 0)
@@ -660,7 +668,6 @@ unloadBtn.MouseButton1Click:Connect(function()
     ShowNotification("Hub unloaded", false)
 end)
 
--- Compact mode toggle (just for visual - we'll implement as minimize to small button)
 local compactBtn = Instance.new("TextButton", utilSection)
 compactBtn.Size = UDim2.new(0.45, 0, 0, 30)
 compactBtn.Position = UDim2.new(0.5, 0, 0, 0)
@@ -671,20 +678,15 @@ compactBtn.Font = Enum.Font.GothamBold
 compactBtn.TextSize = 14
 applyCorner(compactBtn, 6)
 compactBtn.MouseButton1Click:Connect(function()
-    -- Toggle visibility of non-essential? For simplicity, we'll just resize main frame? Let's keep it simple: hide/show parts.
-    -- We'll just toggle visibility of status and sections.
     local visible = ScrollContainer.Visible
     ScrollContainer.Visible = not visible
     StatusFrame.Visible = not visible
     if not visible then
-        MainFrame.Size = UDim2.new(0, 320, 0, 200) -- compact
+        MainFrame.Size = UDim2.new(0, 320, 0, 200)
     else
         MainFrame.Size = UDim2.new(0, 320, 0, 520)
     end
 end)
-
--- Update canvas size of scroll container
-ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 530) -- enough to cover all sections
 
 -- ================================================================
 -- FLOATING TOGGLE BUTTON
@@ -693,10 +695,10 @@ local ToggleButton = Instance.new("TextButton")
 ToggleButton.Size = UDim2.new(0, 50, 0, 50)
 ToggleButton.Position = UDim2.new(1, -65, 0.5, -25)
 ToggleButton.BackgroundColor3 = Color3.fromRGB(30,30,35)
-ToggleButton.Text = "L"
+ToggleButton.Text = "⚙"
 ToggleButton.TextColor3 = Color3.fromRGB(255,255,255)
 ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.TextSize = 24
+ToggleButton.TextSize = 28
 ToggleButton.Active = true
 ToggleButton.Parent = ScreenGui
 applyCorner(ToggleButton, 12)
@@ -718,10 +720,10 @@ end)
 UpdateStatus()
 
 -- ================================================================
--- PART 3 - HELPER FUNCTIONS
+-- PART 3 - HELPER FUNCTIONS (FIXED)
 -- ================================================================
 
--- Get character, humanoid, root part
+-- Get character (FIXED)
 local function GetCharacter()
     local char = Workspace:FindFirstChild("Characters") and Workspace.Characters:FindFirstChild(LocalPlayer.Name)
     if not char then
@@ -740,18 +742,17 @@ local function GetRootPart(char)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- Tween to a CFrame
+-- Tween to a CFrame (FIXED)
 local function TweenTo(part, targetCFrame, speed)
     if not part then return end
     local distance = (targetCFrame.Position - part.Position).Magnitude
-    local duration = distance / (speed or 250)
-    if duration < 0.1 then duration = 0.1 end
+    local duration = math.max(distance / (speed or 250), 0.1)
     local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
     tween:Play()
     return tween
 end
 
--- Equip weapon (returns tool or nil)
+-- Equip weapon (FIXED)
 local function EquipWeapon(character)
     if SELECTED_WEAPON == "None/Melee" then
         local humanoid = GetHumanoid(character)
@@ -759,9 +760,11 @@ local function EquipWeapon(character)
         return nil
     end
 
+    -- Check if already equipped
     local equipped = character:FindFirstChild(SELECTED_WEAPON)
     if equipped and equipped:IsA("Tool") then return equipped end
 
+    -- Find in backpack
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
         local stored = backpack:FindFirstChild(SELECTED_WEAPON)
@@ -776,18 +779,20 @@ local function EquipWeapon(character)
     return nil
 end
 
--- Attack enemy (uses weapon or mouse click)
+-- Attack enemy (FIXED)
 local function AttackEnemy(character)
     local weapon = EquipWeapon(character)
     if weapon then
         weapon:Activate()
-    else
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+        return
     end
+    -- Fallback to click attack
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+    task.wait(0.05)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
 end
 
--- Save position
+-- Save position (FIXED)
 local function SavePosition()
     local char = GetCharacter()
     if char then
@@ -803,7 +808,7 @@ local function SavePosition()
     return false
 end
 
--- Return to saved position
+-- Return to saved position (FIXED)
 local function ReturnPosition()
     if not savedPosition then
         ShowNotification("❌ No saved position", false)
@@ -822,42 +827,54 @@ local function ReturnPosition()
 end
 
 -- ================================================================
--- PART 4 - NOTIFICATION SYSTEM (already defined above)
+-- PART 4 - AUTO FARM (FULLY FIXED)
 -- ================================================================
-
--- ================================================================
--- PART 5 - AUTO FARM THREAD (with pausing support)
--- ================================================================
-
-local farmPaused = false  -- internal flag used by boss to pause
 
 task.spawn(function()
     while scriptRunning do
-        task.wait(0.5)
-        -- Check if farming is enabled and not paused by boss
+        task.wait(0.3)
+        
+        -- Skip if farm is off or paused
         if not isFarming or farmPaused then
+            task.wait(0.5)
             continue
         end
 
         currentMode = "Farming"
         local char = GetCharacter()
-        if not char then continue end
+        if not char then 
+            task.wait(1)
+            continue 
+        end
 
         local myHRP = GetRootPart(char)
         local myHumanoid = GetHumanoid(char)
-        if not myHRP or not myHumanoid or myHumanoid.Health <= 0 then continue end
+        if not myHRP or not myHumanoid or myHumanoid.Health <= 0 then 
+            task.wait(1)
+            continue 
+        end
 
         local enemiesFolder = Workspace:FindFirstChild("Enemies")
-        if not enemiesFolder then continue end
+        if not enemiesFolder then 
+            task.wait(1)
+            continue 
+        end
 
+        local foundEnemy = false
         for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-            if not isFarming or farmPaused or not scriptRunning or myHumanoid.Health <= 0 then break end
+            if not isFarming or farmPaused or not scriptRunning or myHumanoid.Health <= 0 then 
+                break 
+            end
 
             if enemy:IsA("Model") and enemy.Name ~= "R6" then
                 local enemyHRP = enemy:FindFirstChild("HumanoidRootPart")
                 local enemyHum = enemy:FindFirstChild("Humanoid")
+                
                 if enemyHRP and enemyHum and enemyHum.Health > 0 then
-                    if (enemyHRP.Position - myHRP.Position).Magnitude <= MAX_FARM_DISTANCE then
+                    local distance = (enemyHRP.Position - myHRP.Position).Magnitude
+                    if distance <= MAX_FARM_DISTANCE then
+                        foundEnemy = true
+                        
                         -- Noclip
                         local noclipConn
                         noclipConn = RunService.RenderStepped:Connect(function()
@@ -865,39 +882,49 @@ task.spawn(function()
                                 for _, part in ipairs(char:GetDescendants()) do
                                     if part:IsA("BasePart") then
                                         part.CanCollide = false
-                                        part.AssemblyLinearVelocity = Vector3.zero
-                                        part.AssemblyAngularVelocity = Vector3.zero
                                     end
                                 end
                             end
                         end)
 
                         local lastAttack = 0
-                        while enemy:IsDescendantOf(Workspace) and enemyHRP:IsDescendantOf(Workspace)
-                              and enemyHum.Health > 0 and myHumanoid.Health > 0
-                              and isFarming and not farmPaused and scriptRunning do
+                        local attackCooldown = 0.1
+                        
+                        while enemy:IsDescendantOf(Workspace) and enemyHRP:IsDescendantOf(Workspace) 
+                              and enemyHum.Health > 0 and myHumanoid.Health > 0 
+                              and isFarming and not farmPaused and scriptRunning do 
+                            
                             if not myHRP or not myHRP.Parent then break end
-                            myHRP.CFrame = enemyHRP.CFrame * CFrame.new(0, 0, 1)
-
-                            if os.clock() - lastAttack >= 0.1 then
+                            
+                            -- Move to enemy
+                            myHRP.CFrame = enemyHRP.CFrame * CFrame.new(0, 0, 1.5)
+                            
+                            -- Attack
+                            if os.clock() - lastAttack >= attackCooldown then
                                 lastAttack = os.clock()
                                 AttackEnemy(char)
                             end
                             task.wait()
                         end
-
+                        
                         if noclipConn then noclipConn:Disconnect() end
                         if myHumanoid.Health <= 0 then break end
                     end
                 end
             end
         end
+        
+        -- If no enemy found, wait a bit
+        if not foundEnemy then
+            task.wait(0.5)
+        end
     end
 end)
 
 -- ================================================================
--- PART 6 - AUTO STATS THREAD
+-- PART 5 - AUTO STATS
 -- ================================================================
+
 task.spawn(function()
     while scriptRunning do
         task.wait(0.5)
@@ -913,57 +940,10 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 7 - SMART AUTO BOSS THREAD
+-- PART 6 - AUTO BOSS (FULLY FIXED)
 -- ================================================================
 
-task.spawn(function()
-    while scriptRunning do
-        task.wait(1)
-        if not isBossing or farmPaused then  -- if farmPaused, we are already in boss mode
-            -- If boss mode not active, we might still need to check for boss spawn
-        end
-
-        -- Detect boss indicator
-        local bossIndicator = nil
-        local bossName = ""
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if string.match(obj.Name, "^BossIndicator_Shared_") then
-                bossIndicator = obj
-                bossName = string.gsub(obj.Name, "BossIndicator_Shared_", "")
-                break
-            end
-        end
-
-        if bossIndicator and isBossing and not farmPaused then
-            -- Boss appeared and we are in boss mode, but farm is not paused yet -> initiate smart boss routine
-            -- Save current position
-            local char = GetCharacter()
-            if char then
-                local hrp = GetRootPart(char)
-                if hrp then
-                    savedPosition = hrp.CFrame
-                    ShowNotification("⚠ Boss spawned! Saving position and pausing farm.", false)
-                end
-            end
-            -- Pause farm
-            farmPaused = true
-            bossModeActive = true
-            currentMode = "Boss Mode"
-
-            -- Go to boss
-            GoToBoss(bossIndicator, bossName)
-
-            -- After boss killed or lost, return and resume
-            ReturnPosition()
-            farmPaused = false
-            bossModeActive = false
-            currentMode = "Farming"  -- will be updated by farm loop
-            ShowNotification("↩ Returned, resuming farm", true)
-        end
-    end
-end)
-
--- Helper: go to boss and fight
+-- Helper: Go to boss and fight
 local function GoToBoss(bossIndicator, bossName)
     local char = GetCharacter()
     if not char then return end
@@ -1005,16 +985,23 @@ local function GoToBoss(bossIndicator, bossName)
         end
     end
 
+    -- Update position after teleport
+    char = GetCharacter()
+    if not char then return end
+    myHRP = GetRootPart(char)
+    myHumanoid = GetHumanoid(char)
+    if not myHRP or not myHumanoid or myHumanoid.Health <= 0 then return end
+
     -- Fly to boss if still far
-    if myHRP and myHumanoid and myHumanoid.Health > 0 then
-        distance = (bossIndicator.Position - myHRP.Position).Magnitude
-        if distance > 50 then
-            TweenTo(myHRP, bossIndicator.CFrame, BOSS_FLY_SPEED)
-            -- Wait until close
-            while distance > 50 and isBossing and myHumanoid.Health > 0 and scriptRunning do
-                task.wait(0.2)
-                distance = (bossIndicator.Position - myHRP.Position).Magnitude
-            end
+    distance = (bossIndicator.Position - myHRP.Position).Magnitude
+    if distance > 30 then
+        TweenTo(myHRP, bossIndicator.CFrame, BOSS_FLY_SPEED)
+        -- Wait until close
+        local timeout = 0
+        while distance > 30 and isBossing and myHumanoid.Health > 0 and scriptRunning and timeout < 30 do
+            task.wait(0.2)
+            distance = (bossIndicator.Position - myHRP.Position).Magnitude
+            timeout = timeout + 0.2
         end
     end
 
@@ -1034,20 +1021,24 @@ local function GoToBoss(bossIndicator, bossName)
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
-                    part.AssemblyLinearVelocity = Vector3.zero
-                    part.AssemblyAngularVelocity = Vector3.zero
                 end
             end
         end
     end)
 
     local lastAttack = 0
+    local attackCooldown = 0.1
+    
     while realBoss:IsDescendantOf(Workspace) and bossHRP:IsDescendantOf(Workspace)
           and bossHum.Health > 0 and myHumanoid.Health > 0
           and isBossing and scriptRunning do
         if not myHRP or not myHRP.Parent then break end
-        myHRP.CFrame = bossHRP.CFrame * CFrame.new(0, 0, 1)
-        if os.clock() - lastAttack >= 0.1 then
+        
+        -- Move to boss
+        myHRP.CFrame = bossHRP.CFrame * CFrame.new(0, 0, 1.5)
+        
+        -- Attack
+        if os.clock() - lastAttack >= attackCooldown then
             lastAttack = os.clock()
             AttackEnemy(char)
         end
@@ -1055,46 +1046,110 @@ local function GoToBoss(bossIndicator, bossName)
     end
 
     if noclipConn then noclipConn:Disconnect() end
+    
     -- If boss killed, increment boss kills
     if bossHum and bossHum.Health <= 0 then
         bossKills = bossKills + 1
         ShowNotification("💀 Boss defeated!", true)
+        UpdateStatus()
     end
 end
 
+-- Boss detection thread
+task.spawn(function()
+    while scriptRunning do
+        task.wait(1)
+        
+        if not isBossing then
+            -- If boss mode was active but turned off, cleanup
+            if farmPaused then
+                farmPaused = false
+                bossModeActive = false
+                currentMode = isFarming and "Farming" or "Idle"
+                UpdateStatus()
+            end
+            continue
+        end
+
+        -- Detect boss indicator
+        local bossIndicator = nil
+        local bossName = ""
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if string.match(obj.Name, "^BossIndicator_Shared_") then
+                bossIndicator = obj
+                bossName = string.gsub(obj.Name, "BossIndicator_Shared_", "")
+                break
+            end
+        end
+
+        if bossIndicator and isBossing and not farmPaused and not bossModeActive then
+            -- Boss appeared! Start smart boss routine
+            ShowNotification("⚠ Boss spawned! Saving position and pausing farm.", false)
+            
+            -- Save current position
+            local char = GetCharacter()
+            if char then
+                local hrp = GetRootPart(char)
+                if hrp then
+                    savedPosition = hrp.CFrame
+                end
+            end
+            
+            -- Pause farm and activate boss mode
+            farmPaused = true
+            bossModeActive = true
+            currentMode = "Boss Mode"
+            UpdateStatus()
+            
+            -- Go to boss and fight
+            GoToBoss(bossIndicator, bossName)
+            
+            -- Return to saved position
+            if savedPosition then
+                ReturnPosition()
+            end
+            
+            -- Resume everything
+            farmPaused = false
+            bossModeActive = false
+            currentMode = isFarming and "Farming" or "Idle"
+            UpdateStatus()
+            ShowNotification("↩ Returned, resuming farm", true)
+        end
+    end
+end)
+
 -- ================================================================
--- PART 8 - POSITION SYSTEM (auto save and auto return)
+-- PART 7 - POSITION SYSTEM (Auto Save & Auto Return)
 -- ================================================================
 
 -- Auto save thread
 task.spawn(function()
     while scriptRunning do
-        task.wait(5)  -- every 5 seconds
+        task.wait(5)
         if autoSaveEnabled then
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
                 if hrp then
                     savedPosition = hrp.CFrame
-                    -- silently update
                 end
             end
         end
     end
 end)
 
--- Auto return thread (if enabled and position saved)
+-- Auto return thread
 task.spawn(function()
     while scriptRunning do
-        task.wait(1)
+        task.wait(2)
         if autoReturnEnabled and savedPosition and not farmPaused and not bossModeActive then
-            -- Check if we are far from saved position, return if so
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
                 if hrp then
                     local dist = (savedPosition.Position - hrp.Position).Magnitude
-                    if dist > 50 then  -- if far away, return
+                    if dist > 50 then
                         ReturnPosition()
                     end
                 end
@@ -1104,7 +1159,7 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 9 - RUNTIME STATISTICS UPDATE
+-- PART 8 - RUNTIME STATISTICS
 -- ================================================================
 
 task.spawn(function()
@@ -1116,10 +1171,9 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 10 - ENEMY KILL DETECTION (increment kills)
+-- PART 9 - ENEMY KILL DETECTION
 -- ================================================================
--- We can listen for enemy death by checking Humanoid.Died events.
--- Since we don't have direct access to all enemies at start, we can connect to new enemies.
+
 local function onEnemyAdded(enemy)
     if enemy:IsA("Model") and enemy:FindFirstChild("Humanoid") then
         local hum = enemy:FindFirstChild("Humanoid")
@@ -1130,7 +1184,6 @@ local function onEnemyAdded(enemy)
     end
 end
 
--- Connect to existing enemies
 local enemiesFolder = Workspace:FindFirstChild("Enemies")
 if enemiesFolder then
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
@@ -1139,7 +1192,6 @@ if enemiesFolder then
     enemiesFolder.ChildAdded:Connect(onEnemyAdded)
 end
 
--- Also handle when enemies folder appears later
 Workspace.ChildAdded:Connect(function(child)
     if child.Name == "Enemies" then
         child.ChildAdded:Connect(onEnemyAdded)
@@ -1150,21 +1202,7 @@ Workspace.ChildAdded:Connect(function(child)
 end)
 
 -- ================================================================
--- PART 11 - CLEANUP ON UNLOAD
+-- FINAL STATUS UPDATE
 -- ================================================================
--- Already handled in unload button.
-
--- ================================================================
--- FINAL NOTES
--- ================================================================
--- The script now includes:
--- - All original functionality (Farm, Boss, Stats, Weapon/Island dropdowns, Teleport, Noclip, Tween, etc.)
--- - Redesigned UI with status panel, sections, modern look
--- - Notification system
--- - Save Position / Return Position / Auto Save / Auto Return
--- - Smart Auto Boss (pauses farm, saves pos, goes to boss, returns, resumes)
--- - Runtime stats, enemy/boss kills
--- - Compact mode toggle
--- - All helper functions to reduce duplication
--- - Mobile draggable support
--- ================================================================
+UpdateStatus()
+ShowNotification("✅ Legacy Admin Hub V2 Loaded!", true, 2)
