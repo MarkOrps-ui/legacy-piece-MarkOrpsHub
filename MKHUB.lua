@@ -956,7 +956,7 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 6 - AUTO BOSS (FIXED - NO POSITION INTERFERENCE)
+-- PART 6 - AUTO BOSS (FIXED - PROPER STATE MANAGEMENT)
 -- ================================================================
 
 -- Helper: Go to boss and fight
@@ -1011,6 +1011,10 @@ local function GoToBoss(bossIndicator, bossName)
     -- Fly to boss if still far
     distance = (bossIndicator.Position - myHRP.Position).Magnitude
     if distance > 30 then
+        -- Set boss mode active so auto-return doesn't interfere
+        bossModeActive = true
+        UpdateStatus()
+        
         TweenTo(myHRP, bossIndicator.CFrame, BOSS_FLY_SPEED)
         local timeout = 0
         while distance > 30 and isBossing and myHumanoid.Health > 0 and scriptRunning and timeout < 30 do
@@ -1022,13 +1026,25 @@ local function GoToBoss(bossIndicator, bossName)
 
     -- Now fight the real boss
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
-    if not enemiesFolder then return end
+    if not enemiesFolder then 
+        bossModeActive = false
+        UpdateStatus()
+        return 
+    end
     local realBoss = enemiesFolder:FindFirstChild(bossName)
-    if not realBoss then return end
+    if not realBoss then 
+        bossModeActive = false
+        UpdateStatus()
+        return 
+    end
 
     local bossHRP = realBoss:FindFirstChild("HumanoidRootPart")
     local bossHum = realBoss:FindFirstChild("Humanoid")
-    if not bossHRP or not bossHum or bossHum.Health <= 0 then return end
+    if not bossHRP or not bossHum or bossHum.Health <= 0 then 
+        bossModeActive = false
+        UpdateStatus()
+        return 
+    end
 
     -- Noclip during fight
     local noclipConn = RunService.RenderStepped:Connect(function()
@@ -1065,9 +1081,13 @@ local function GoToBoss(bossIndicator, bossName)
         ShowNotification("💀 Boss defeated!", true)
         UpdateStatus()
     end
+    
+    -- Boss fight is over, turn off boss mode
+    bossModeActive = false
+    UpdateStatus()
 end
 
--- Boss detection thread (DOES NOT TOUCH POSITION)
+-- Boss detection thread
 task.spawn(function()
     while scriptRunning do
         task.wait(1)
@@ -1096,7 +1116,7 @@ task.spawn(function()
         if bossIndicator and isBossing and not farmPaused and not bossModeActive then
             ShowNotification("⚠ Boss spawned! Pausing farm.", false)
             
-            -- ONLY pause farm - NO POSITION SAVING
+            -- Pause farm and activate boss mode
             farmPaused = true
             bossModeActive = true
             currentMode = "Boss Mode"
@@ -1105,7 +1125,7 @@ task.spawn(function()
             -- Go to boss and fight
             GoToBoss(bossIndicator, bossName)
             
-            -- Resume farming - NO AUTO RETURN
+            -- Resume farming
             farmPaused = false
             bossModeActive = false
             currentMode = isFarming and "Farming" or "Idle"
@@ -1116,14 +1136,14 @@ task.spawn(function()
 end)
 
 -- ================================================================
--- PART 7 - POSITION SYSTEM THREADS (WORKING)
+-- PART 7 - POSITION SYSTEM THREADS (FIXED - NO CONFLICT WITH BOSS)
 -- ================================================================
 
 -- Auto save thread
 task.spawn(function()
     while scriptRunning do
         task.wait(5)
-        if autoSaveEnabled then
+        if autoSaveEnabled and not bossModeActive and not farmPaused then
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
@@ -1136,11 +1156,16 @@ task.spawn(function()
     end
 end)
 
--- Auto return thread
+-- Auto return thread (FIXED - ONLY WORKS WHEN NOT IN BOSS MODE)
 task.spawn(function()
     while scriptRunning do
         task.wait(2)
-        if autoReturnEnabled and savedPosition then
+        -- ONLY auto-return if:
+        -- 1. Auto return is enabled
+        -- 2. We have a saved position
+        -- 3. NOT in boss mode (bossModeActive is false)
+        -- 4. NOT paused by boss (farmPaused is false)
+        if autoReturnEnabled and savedPosition and not bossModeActive and not farmPaused then
             local char = GetCharacter()
             if char then
                 local hrp = GetRootPart(char)
@@ -1154,7 +1179,6 @@ task.spawn(function()
         end
     end
 end)
-
 -- ================================================================
 -- PART 8 - RUNTIME STATISTICS
 -- ================================================================
